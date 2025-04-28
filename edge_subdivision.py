@@ -298,6 +298,63 @@ if __name__=="__main__":
         vs, edges, v_sv = skeletal_subdivision(f, device='cpu', plot=0, prune=1, bbox=bbox)
 
 
+    ### Prune vertices based on f(v) ###
+    eps = 1e-4
+
+    with torch.no_grad():
+        values = f(vs)  # (V, 1) or (V,) 형태일 것
+        if values.ndim == 2 and values.shape[1] == 1:
+            values = values.squeeze(1)
+
+        # 1. Determine valid vertices: |f(v)| >= eps
+        valid_mask = (values.abs() <= eps)  # (V, ) bool tensor
+        v_prun = vs[valid_mask]
+
+        # 2. Create a mapping from old vertex index -> new vertex index
+        old_to_new_idx = -torch.ones(vs.shape[0], dtype=torch.long, device=vs.device)  # (V, )
+        old_to_new_idx[valid_mask] = torch.arange(v_prun.shape[0], device=vs.device)
+
+        # 3. Filter edges: keep only edges where both vertices survive
+        valid_edges_mask = (valid_mask[edges[:, 0]] & valid_mask[edges[:, 1]])
+        e_valid = edges[valid_edges_mask]
+
+        # 4. Remap edges to new vertex indices
+        e_prun = torch.stack([
+            old_to_new_idx[e_valid[:, 0]],
+            old_to_new_idx[e_valid[:, 1]]
+        ], dim=1)
+
+    print(f"Original vertices: {vs.shape[0]}, Pruned vertices: {v_prun.shape[0]}")
+    print(f"Original edges: {edges.shape[0]}, Pruned edges: {e_prun.shape[0]}")
+
+    ### Save as OBJ file ###
+    obj_path = "./bunny_relu.obj"
+    with open(obj_path, "w") as f_obj:
+        # 1. Write vertices
+        for v in vs:
+            f_obj.write(f"v {v[0].item()} {v[1].item()} {v[2].item()}\n")
+
+        # 2. Write edges (as lines)
+        # Note: .obj format uses 1-based indexing
+        for e in edges:
+            f_obj.write(f"l {e[0].item() + 1} {e[1].item() + 1}\n")
+
+    print(f"Saved mesh to {obj_path}")
+
+    ### Save as OBJ file ###
+    obj_path = "./bunny_relu_pruned.obj"
+    with open(obj_path, "w") as f_obj:
+        # 1. Write vertices
+        for v in v_prun:
+            f_obj.write(f"v {v[0].item()} {v[1].item()} {v[2].item()}\n")
+
+        # 2. Write edges (as lines)
+        # Note: .obj format uses 1-based indexing
+        for e in e_prun:
+            f_obj.write(f"l {e[0].item() + 1} {e[1].item() + 1}\n")
+
+    print(f"Saved mesh to {obj_path}")
+
     ### Plot ###
     # from utils_viz import plot_verts_and_edges
     # from utils import get_labels
